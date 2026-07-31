@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -128,6 +129,26 @@ static struct a2dp_caps_helpers a2dp_aac_caps_helpers = {
 	.select_channel_mode = a2dp_aac_caps_select_channel_mode,
 	.select_sample_rate = a2dp_aac_caps_select_sample_rate,
 };
+
+static const char *a2dp_aac_get_fdk_aot_name(unsigned int aot) {
+	switch (aot) {
+	case AOT_MP2_AAC_LC:
+		return "MPEG-2 AAC-LC";
+	case AOT_AAC_LC:
+		return "MPEG-4 AAC-LC";
+	case AOT_AAC_LTP:
+		return "MPEG-4 AAC-LTP";
+	case AOT_AAC_SCAL:
+		return "MPEG-4 AAC-Scalable";
+	case AOT_SBR:
+		return "MPEG-4 HE-AAC";
+	case AOT_PS:
+		return "MPEG-4 HE-AAC v2";
+	case AOT_ER_AAC_ELD:
+		return "MPEG-4 AAC-ELD v2";
+	}
+	return "N/A";
+}
 
 static unsigned int a2dp_aac_get_fdk_vbr_mode(
 		unsigned int channels, unsigned int bitrate) {
@@ -271,6 +292,33 @@ void *a2dp_aac_enc_thread(struct ba_transport_pcm *t_pcm) {
 		error("Couldn't get encoder info: %s", aacenc_strerror(err));
 		goto fail_init;
 	}
+
+	/* Report the configuration applied by the encoder itself, which is not
+	 * necessarily the one requested by us. In particular, in VBR mode the
+	 * bit rate is not used at all - it merely selects the VBR mode. */
+	const unsigned int fdk_bitrate_mode = aacEncoder_GetParam(handle, AACENC_BITRATEMODE);
+	char fdk_bitrate[16] = "N/A";
+	char fdk_peak_bitrate[16] = "N/A";
+	char fdk_mode[16] = "CBR";
+	unsigned int value;
+
+	if (fdk_bitrate_mode != 0)
+		snprintf(fdk_mode, sizeof(fdk_mode), "VBR-%u", fdk_bitrate_mode);
+	if ((value = aacEncoder_GetParam(handle, AACENC_BITRATE)) != UINT_MAX)
+		snprintf(fdk_bitrate, sizeof(fdk_bitrate), "%u", value);
+#if AACENCODER_LIB_VERSION >= 0x03041600 /* 3.4.22 */
+	if ((value = aacEncoder_GetParam(handle, AACENC_PEAK_BITRATE)) != UINT_MAX)
+		snprintf(fdk_peak_bitrate, sizeof(fdk_peak_bitrate), "%u", value);
+#endif
+
+	info("AAC: Selected encoder configuration: "
+			"object type: %s, bit rate mode: %s, bit rate: %s b/s, "
+			"peak bit rate: %s b/s, bandwidth: %u Hz, afterburner: %s, LATM: v%u",
+			a2dp_aac_get_fdk_aot_name(aacEncoder_GetParam(handle, AACENC_AOT)),
+			fdk_mode, fdk_bitrate, fdk_peak_bitrate,
+			aacEncoder_GetParam(handle, AACENC_BANDWIDTH),
+			aacEncoder_GetParam(handle, AACENC_AFTERBURNER) ? "on" : "off",
+			aacEncoder_GetParam(handle, AACENC_AUDIOMUXVER));
 
 	ffb_t bt = { 0 };
 	ffb_t pcm = { 0 };
