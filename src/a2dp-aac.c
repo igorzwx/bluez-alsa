@@ -293,9 +293,14 @@ void *a2dp_aac_enc_thread(struct ba_transport_pcm *t_pcm) {
 		goto fail_init;
 	}
 
+	info("AAC: Negotiated A2DP configuration: "
+			"sample rate: %u Hz, channels: %u, VBR: %s, bit rate: %u b/s",
+			rate, channels, configuration->vbr ? "yes" : "no", bitrate);
+
 	/* Report the configuration applied by the encoder itself, which is not
-	 * necessarily the one requested by us. In particular, in VBR mode the
-	 * bit rate is not used at all - it merely selects the VBR mode. */
+	 * necessarily the negotiated one. In particular, in VBR mode the bit rate
+	 * is not used at all - it merely selects the VBR mode - and HE-AAC clamps
+	 * the bit rate to its own maximum. */
 	const unsigned int fdk_bitrate_mode = aacEncoder_GetParam(handle, AACENC_BITRATEMODE);
 	char fdk_bitrate[16] = "N/A";
 	char fdk_peak_bitrate[16] = "N/A";
@@ -311,7 +316,7 @@ void *a2dp_aac_enc_thread(struct ba_transport_pcm *t_pcm) {
 		snprintf(fdk_peak_bitrate, sizeof(fdk_peak_bitrate), "%u", value);
 #endif
 
-	info("AAC: Selected encoder configuration: "
+	info("AAC: Applied encoder configuration: "
 			"object type: %s, bit rate mode: %s, bit rate: %s b/s, "
 			"peak bit rate: %s b/s, bandwidth: %u Hz, afterburner: %s, LATM: v%u",
 			a2dp_aac_get_fdk_aot_name(aacEncoder_GetParam(handle, AACENC_AOT)),
